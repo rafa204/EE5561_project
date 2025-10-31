@@ -2,17 +2,36 @@ import numpy as np
 import math
 
 def corr_1d(signal, kernel):
-    """Implementing 'same' correlation"""
+    """Implementing 'same' correlation, symmetric padding"""
     m = signal.shape[0]
     n = kernel.shape[0]
 
+    # to do: simplify using np.concatenate or use np.pad
     padded = np.zeros(m+n-1)
     padded[0:m] = signal
-    padded = np.roll(padded, math.ceil((n-1)/2))
+    spaces = math.ceil((n-1)/2)
+    padded = np.roll(padded, spaces)
 
+    #symmetric extension
+    padded[0:spaces] = signal[spaces-1::-1]
+    if n % 2 == 0:
+        padded[m+spaces:] = signal[-1:-spaces:-1]
+    else:
+        padded[m+spaces:] = signal[-1:-spaces-1:-1]
+    
+    print(padded)
+    if n % 2 == 0:
+        spaces_1 = spaces-1
+    else:
+        spaces_1 = spaces
+    padded = np.pad(signal, (spaces, spaces_1), mode='wrap')
+    print(padded)
+
+    #print('padded',padded)
     index = np.arange(m)[:,None] + np.arange(n)[None,:]
     block = padded[index.flatten()].reshape((m,n))
     result = np.sum(block * kernel, axis=-1).flatten()
+    #result = np.correlate(padded, kernel, mode='valid')
     return result
 
 def dwc_1d(sig, levels, scaling_function, wavelet_function):
@@ -48,8 +67,11 @@ def dwc_1d(sig, levels, scaling_function, wavelet_function):
 if __name__ == "__main__":
     import pywt
 
+    # sig = np.arange(10)
+    # kernel = np.array([1,1,1,1])
+    # print(corr_1d(sig, kernel))
     sig = np.array([3, 1, 0, 4, 8, 6, 9, 8, 4 , 4, 5, 6 ,3])
-    cA, cD = pywt.dwt(sig, 'haar', mode='zero')
+    cA, cD = pywt.dwt(sig, 'haar', mode='periodic')
 
     print("Approximation:", cA)
     print("Detail:", cD) 
