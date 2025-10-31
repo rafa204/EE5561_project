@@ -2,7 +2,7 @@ import numpy as np
 import math
 
 def corr_1d(signal, kernel):
-    """'same' correlation, periodic padding"""
+    """'same' correlation with periodic padding"""
     n = kernel.shape[0]
     spaces = math.ceil((n-1)/2)
 
@@ -10,7 +10,7 @@ def corr_1d(signal, kernel):
         padded = np.pad(signal, (spaces, spaces), mode='wrap')
     else:
         padded = np.pad(signal, (spaces, spaces-1), mode='wrap')
-    result = np.correlate(padded, kernel, mode='valid')
+    result = np.correlate(padded, kernel, mode='valid') # Still, 'same' through padding
     return result
 
 def dwc_1d(sig, levels, scaling_function, wavelet_function):
@@ -20,7 +20,7 @@ def dwc_1d(sig, levels, scaling_function, wavelet_function):
     """
     # Check if odd
     if len(sig) % 2 != 0:
-        sig = np.append(sig, sig[0])
+        sig = np.append(sig, sig[0]) # alternative way?
     
     X = []
     for i in range(levels):
@@ -44,16 +44,7 @@ def dwc_1d(sig, levels, scaling_function, wavelet_function):
 
 if __name__ == "__main__":
     
-    import pywt
     sig = np.array([3, 1, 0, 4, 8, 6, 9, 8, 4 , 4, 5, 6 ])
-    wavelet = pywt.Wavelet('haar')
-    cA = sig.copy()
-    levels = 3
-    for level in range(levels):
-        cA, cD = pywt.dwt(cA, wavelet, mode='periodization')
-        print(f"Level {level+1}")
-        print("Approximation:", cA)
-        print("Detail:", cD)
 
     scaling_function = (1/np.sqrt(2)) * np.array([1, 1])
     wavelet_function =  (1/np.sqrt(2)) * np.array([1, -1])
