@@ -20,6 +20,7 @@ class VAE_UNET(nn.Module):
         # Encoder Layers
         self.E1 = nn.Sequential(
             nn.Conv2d(in_channels, 32, kernel_size=3, padding=1),
+            nn.Dropout2d(p=0.2), 
             ResidualBlock(32)
         )
         self.E2 = nn.Sequential(
