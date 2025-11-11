@@ -171,6 +171,7 @@ class VAE_UNET(nn.Module):
 
         # VAE layers
         VAE_out = self.VD(enc_out_4)
+        mu, logvar = torch.chunk(x, 2, dim=1)  # split into two 128-sized vectors
         VAE_out = self.VDraw(VAE_out)
         VAE_out = self.VU_1(VAE_out)
         VAE_out = VAE_out.view(-1, 256, self.enc_dim[0] // 2, self.enc_dim[1] // 2)
@@ -185,7 +186,7 @@ class VAE_UNET(nn.Module):
         VAE_out = VAE_out + self.VBlock_HR(VAE_out)
         VAE_out = self.Vend(VAE_out)
 
-        return dec_out, VAE_out
+        return dec_out, VAE_out, mu, logvar
 
     
 # Class for Gaussian Distribution Sample
