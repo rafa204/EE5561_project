@@ -66,7 +66,7 @@ class BRATS_dataset(Dataset):
     def __getitem__(self, idx):
         #Each idx will get one 2.5D slice of a particular volume
         volume_idx = idx // self.slices_per_volume
-        slice_idx = idx % self.num_volumes
+        slice_idx = idx % self.slices_per_volume
         slice_range = np.arange(slice_idx, slice_idx + self.num_slices)
         
         volume_path = self.subdir_list[volume_idx]
