@@ -82,7 +82,7 @@ class VAE_UNET(nn.Module):
 
         # VU layer is split to add the reshaping in the middle
         self.VU_1 = nn.Sequential(
-            nn.Linear(128, int(256 * (self.enc_dim[0] / 2) * (self.enc_dim[1] / 2))),
+            nn.Linear(128, int(256 * (self.enc_dim[0] // 2) * (self.enc_dim[1] // 2))),
             nn.ReLU()
         )
         self.VU_2 = nn.Sequential(
@@ -172,7 +172,7 @@ class VAE_UNET(nn.Module):
         VAE_out = self.VD(enc_out_4)
         VAE_out = self.VDraw(VAE_out)
         VAE_out = self.VU_1(VAE_out)
-        VAE_out = VAE_out.view(-1, 256, int(self.enc_dim[0] / 2), int(self.enc_dim[1] / 2))
+        VAE_out = VAE_out.view(-1, 256, self.enc_dim[0] // 2, self.enc_dim[1] // 2)
         VAE_out = self.VU_2(VAE_out)
         VAE_out = self.VUp2(VAE_out)
         VAE_out = VAE_out + self.VBlock2(VAE_out)
