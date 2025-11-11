@@ -66,7 +66,7 @@ class VAE_UNET(nn.Module):
 
         self.D5 = nn.Sequential(
             ResidualBlock(32),
-            nn.Conv2d(32, num_classes, kernel_size=1),
+            nn.Conv2d(32, num_classes-1, kernel_size=1),
             nn.Sigmoid()
         )
 
@@ -171,7 +171,7 @@ class VAE_UNET(nn.Module):
 
         # VAE layers
         VAE_out = self.VD(enc_out_4)
-        mu, logvar = torch.chunk(x, 2, dim=1)  # split into two 128-sized vectors
+        mu, logvar = torch.chunk(VAE_out, 2, dim=1)  # split into two 128-sized vectors
         VAE_out = self.VDraw(VAE_out)
         VAE_out = self.VU_1(VAE_out)
         VAE_out = VAE_out.view(-1, 256, self.enc_dim[0] // 2, self.enc_dim[1] // 2)
