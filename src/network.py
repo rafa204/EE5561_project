@@ -20,24 +20,24 @@ class VAE_UNET(nn.Module):
         # Encoder Layers
         self.E1 = nn.Sequential(
             nn.Conv2d(in_channels, 32, kernel_size=3, padding=1),
-            self.ResBlock(32)
+            ResidualBlock(32)
         )
         self.E2 = nn.Sequential(
             nn.Conv2d(32, 64, kernel_size=3, stride=2, padding=1),
-            self.ResBlock(64),
-            self.ResBlock(64)
+            ResidualBlock(64),
+            ResidualBlock(64)
         )
         self.E3 = nn.Sequential(
             nn.Conv2d(64, 128, kernel_size=3, stride=2, padding=1),
-            self.ResBlock(128),
-            self.ResBlock(128)
+            ResidualBlock(128),
+            ResidualBlock(128)
         )
         self.E4 = nn.Sequential(
             nn.Conv2d(128, 256, kernel_size=3, stride=2, padding=1),
-            self.ResBlock(256),
-            self.ResBlock(256),
-            self.ResBlock(256),
-            self.ResBlock(256)
+            ResidualBlock(256),
+            ResidualBlock(256),
+            ResidualBlock(256),
+            ResidualBlock(256)
         )
 
         # Decoder Layers
@@ -46,18 +46,26 @@ class VAE_UNET(nn.Module):
             nn.Upsample(scale_factor=2, mode='bilinear')
         )
         self.D2 = nn.Sequential(
-            self.ResBlock(128),
+            ResidualBlock(128),
             nn.Conv2d(128, 64, kernel_size=1),
             nn.Upsample(scale_factor=2, mode='bilinear')
         )
         self.D3 = nn.Sequential(
-            self.ResBlock(64),
+            ResidualBlock(64),
             nn.Conv2d(64, 32, kernel_size=1),
             nn.Upsample(scale_factor=2, mode='bilinear')
         )
+
+        # Modified for HR output
         self.D4 = nn.Sequential(
-            self.ResBlock(32),
-            nn.Conv2d(32, 1, kernel_size=1), # Note we go to one single channel
+            ResidualBlock(32),
+            nn.Conv2d(32, 32, kernel_size=1), # Keeping the same number of filters
+            nn.Upsample(size=(HR_dim[0], HR_dim[1]), mode='bilinear')
+        )
+
+        self.D5 = nn.Sequential(
+            ResidualBlock(32),
+            nn.Conv2d(32, 1, kernel_size=1),
             nn.Sigmoid()
         )
 
@@ -158,6 +166,7 @@ class VAE_UNET(nn.Module):
         dec_out = self.D2(enc_out_3 + dec_out)
         dec_out = self.D3(enc_out_2 + dec_out)
         dec_out = self.D4(enc_out_1 + dec_out)
+        dec_out = self.D5(dec_out)
 
         # VAE layers
         VAE_out = self.VD(enc_out_4)
@@ -177,18 +186,6 @@ class VAE_UNET(nn.Module):
 
         return dec_out, VAE_out
 
-    def ResBlock(self, in_channels):
-        # Create a Residual Block for a given number of channels
-        res_layers = nn.Sequential(
-            nn.GroupNorm(in_channels, in_channels),
-            nn.ReLU(),
-            nn.Conv2d(in_channels, in_channels, kernel_size=3, padding=1),
-            nn.GroupNorm(in_channels, in_channels),
-            nn.ReLU(),
-            nn.Conv2d(in_channels, in_channels, kernel_size=3, padding=1)
-        )
-
-        return res_layers
     
 # Class for Gaussian Distribution Sample
 class GaussianSample(nn.Module):
@@ -199,6 +196,22 @@ class GaussianSample(nn.Module):
         eps = torch.randn_like(std)            # sample ε ~ N(0, I)
         z = mu + eps * std                     # reparameterization
         return z
+    
+# Class for Residual Blocks
+class ResidualBlock(nn.Module):
+    def __init__(self, in_channels):
+        super().__init__()
+        self.res_layers = nn.Sequential(
+            nn.GroupNorm(in_channels, in_channels),
+            nn.ReLU(),
+            nn.Conv2d(in_channels, in_channels, kernel_size=3, padding=1),
+            nn.GroupNorm(in_channels, in_channels),
+            nn.ReLU(),
+            nn.Conv2d(in_channels, in_channels, kernel_size=3, padding=1)
+        )
+
+    def forward(self, x):
+        return x + self.res_layers(x)
 
 """
 HR_input = np.asarray([192, 128], np.int64)
