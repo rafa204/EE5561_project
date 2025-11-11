@@ -67,22 +67,24 @@ class VAE_UNET(nn.Module):
             nn.ReLU(),
             nn.Conv2d(256, 16, kernel_size=3, stride=2, padding=1),
             nn.Flatten(),
-            nn.Linear(16 * self.VAE_C1[0] * self.VAE_C1[1], 256)
+            nn.Linear(int(16 * self.VAE_C1[0] * self.VAE_C1[1]), 256)
         ) 
 
         self.VDraw = GaussianSample()
 
-        self.VU = nn.Sequential(
-            nn.Linear(128, 256 * (self.enc_dim[0] / 2) * (self.enc_dim[1] / 2)),
-            nn.ReLU(),
-            Reshape(256, (self.enc_dim[0] / 2), (self.enc_dim[1] / 2)),
+        # VU layer is split to add the reshaping in the middle
+        self.VU_1 = nn.Sequential(
+            nn.Linear(128, int(256 * (self.enc_dim[0] / 2) * (self.enc_dim[1] / 2))),
+            nn.ReLU()
+        )
+        self.VU_2 = nn.Sequential(
             nn.Conv2d(256, 256, kernel_size=1),
-            nn.Upsample(scale_factor=2, mode='linear')
+            nn.Upsample(scale_factor=2, mode='bilinear')
         )
 
         self.VUp2 = nn.Sequential(
             nn.Conv2d(256, 128, kernel_size=1),
-            nn.Upsample(scale_factor=2, mode='linear')
+            nn.Upsample(scale_factor=2, mode='bilinear')
         )
 
         # Do not forget to add input after this
@@ -97,7 +99,7 @@ class VAE_UNET(nn.Module):
 
         self.VUp1 = nn.Sequential(
             nn.Conv2d(128, 64, kernel_size=1),
-            nn.Upsample(scale_factor=2, mode='linear')
+            nn.Upsample(scale_factor=2, mode='bilinear')
         )
 
         # Do not forget to add input after this
@@ -112,7 +114,7 @@ class VAE_UNET(nn.Module):
 
         self.VUp0 = nn.Sequential(
             nn.Conv2d(64, 32, kernel_size=1),
-            nn.Upsample(scale_factor=2, mode='linear')
+            nn.Upsample(scale_factor=2, mode='bilinear')
         )
 
         # Do not forget to add input after this
@@ -128,7 +130,7 @@ class VAE_UNET(nn.Module):
         # Custom layer to handle superresolution
         self.VUp_HR = nn.Sequential(
             nn.Conv2d(32, 32, kernel_size=1),
-            nn.Upsample(size=(HR_dim[0], HR_dim[1]), mode='linear')
+            nn.Upsample(size=(HR_dim[0], HR_dim[1]), mode='bilinear')
         )
 
         # Do not forget to add input after this
@@ -160,7 +162,9 @@ class VAE_UNET(nn.Module):
         # VAE layers
         VAE_out = self.VD(enc_out_4)
         VAE_out = self.VDraw(VAE_out)
-        VAE_out = self.VU(VAE_out)
+        VAE_out = self.VU_1(VAE_out)
+        VAE_out = VAE_out.view(-1, 256, int(self.enc_dim[0] / 2), int(self.enc_dim[1] / 2))
+        VAE_out = self.VU_2(VAE_out)
         VAE_out = self.VUp2(VAE_out)
         VAE_out = VAE_out + self.VBlock2(VAE_out)
         VAE_out = self.VUp1(VAE_out)
@@ -170,7 +174,7 @@ class VAE_UNET(nn.Module):
         VAE_out = self.VUp_HR(VAE_out)
         VAE_out = VAE_out + self.VBlock_HR(VAE_out)
         VAE_out = self.Vend(VAE_out)
-        
+
         return dec_out, VAE_out
 
     def ResBlock(self, in_channels):
@@ -196,10 +200,13 @@ class GaussianSample(nn.Module):
         z = mu + eps * std                     # reparameterization
         return z
 
-# Class for Reshaping inside Sequential
-class Reshape(nn.Module):
-    def __init__(self, *shape):
-        super().__init__()
-        self.shape = shape
-    def forward(self, x):
-        return x.view(x.size(0), *self.shape)
+"""
+HR_input = np.asarray([192, 128], np.int64)
+LR_input = HR_input / 2
+test_net = VAE_UNET(3, LR_input, HR_input)
+x = torch.rand(4, 3, int(LR_input[0]), int(LR_input[1]))
+D, V = test_net(x)
+print("Input shape:", x.shape)
+print("Decoder Output shape:", D.shape)
+print("VAE output shape:", V.shape)
+"""
