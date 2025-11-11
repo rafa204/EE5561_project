@@ -9,7 +9,7 @@ import numpy as np
 # Takes slices as channels
 # Assuming full image (160x192x128)
 class VAE_UNET(nn.Module):
-    def __init__(self, in_channels, input_dim=np.asarray([192,128], dtype=np.int64), HR_dim=np.asarray([192,128], dtype=np.int64)):
+    def __init__(self, in_channels, input_dim=np.asarray([192,128], dtype=np.int64), HR_dim=np.asarray([192,128], dtype=np.int64), num_classes = 5):
         super(VAE_UNET, self).__init__()
 
         # Dimensions
@@ -66,7 +66,7 @@ class VAE_UNET(nn.Module):
 
         self.D5 = nn.Sequential(
             ResidualBlock(32),
-            nn.Conv2d(32, 1, kernel_size=1),
+            nn.Conv2d(32, num_classes, kernel_size=1),
             nn.Sigmoid()
         )
 
