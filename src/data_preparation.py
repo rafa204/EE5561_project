@@ -20,23 +20,26 @@ class BRATS_dataset(Dataset):
     INPUTS:
     dataset_path: path leading to the "MICCAI_BraTS2020_TrainingData" directory
     num_slices: number of slices in each 2.5D slab
-    downsamp_ratio: factor by which data is downsampled
+    ds_ratio: factor by which data is downsampled
     downsamp_type: what kind of downsampling to use
     data_shape: size of each volume
     num_volumes: number of volumes to be used for the dataset. The default value is to use all volumes availeable.
     """
     
-    def __init__(self, dataset_path, device, num_slices = 3, downsamp_ratio = 2, downsamp_type = 'bicubic', data_shape = [240, 240, 155], num_volumes = np.inf):
+    def __init__(self, dataset_path, device, num_slices = 3, ds_ratio = 2, downsamp_type = 'bicubic', data_shape = [240,240,155], num_volumes = np.inf, concatenate_modalities = False, binary_mask = True, augment = True):
         
         self.dataset_path = Path(dataset_path)
         self.device = device
         self.num_slices = num_slices
-        self.downsamp_ratio = downsamp_ratio
+        self.ds_ratio = ds_ratio
         self.data_shape = data_shape
         self.downsamp_type = downsamp_type
         self.slices_per_volume = data_shape[2] - 2*(num_slices//2)
         self.output_dim = np.array([240,240,num_slices], dtype = np.int64)
-        self.input_dim = np.array([240//downsamp_ratio,240//downsamp_ratio,num_slices], dtype = np.int64)
+        self.input_dim = np.array([240//ds_ratio,240//ds_ratio,num_slices], dtype = np.int64)
+        self.augment = augment
+        self.binary_mask = binary_mask
+        self.concatenate_modalities = concatenate_modalities
         
 
         subdir_list = [p for p in self.dataset_path.iterdir() if p.is_dir()]
@@ -53,9 +56,26 @@ class BRATS_dataset(Dataset):
     def __len__(self):
         return self.length
     
+    def zscore(self, data):
+        non_zero_locs = data>0
+        non_zero_data = data[non_zero_locs]
+        
+        if non_zero_data.size == 0:
+            return data
+        
+        mean = np.mean(non_zero_data)
+        std = np.std(non_zero_data)
+        zscored_data =  (non_zero_data - mean) / std
+        
+        data[non_zero_locs] = zscored_data
+        
+        return data
+        
+
+    
     def downsize(self, img):
         #Downsaize in each channel
-        ds = 1/float(self.downsamp_ratio)
+        ds = 1/float(self.ds_ratio)
         if self.downsamp_type == 'bicubic':
             downscaled_image = ndimage.zoom(img, (1, ds, ds), order=3)
         if self.downsamp_type == 'bilinear':
@@ -81,10 +101,27 @@ class BRATS_dataset(Dataset):
         #Get segmentation mask from the list and extract its central slice
         mask = data_list.pop(1)[:,:,self.num_slices//2].squeeze()
         
-        #Normalize each 2.5D slice
-        img_list = [img/img.max() if img.max()>0 else img for img in data_list]
-        img_list = [img.transpose(2,0,1) for img in data_list] #Channel dim first
         
+        #Normalize each 2.5D slice
+        img_list = [self.zscore(img) if img.max()>0 else img for img in data_list]
+    
+        img_list = [img.transpose(2,0,1) for img in img_list] #Channel dim first
+        
+        
+        #Apply augmentations
+        if(self.augment):
+            intensity_shift = np.random.uniform(-0.1, 0.1, size=(4,))
+            intensity_scale = np.random.uniform(0.9, 1.1, size=(4,))
+            axis_flip = np.random.binomial(n=1, p=0.5, size=(3,))
+
+            for i, img in enumerate(img_list):
+                img_list[i] += intensity_shift[i]
+                img_list[i] *= intensity_scale[i]
+                for j, ax in enumerate(axis_flip):
+                    if ax: 
+                        img_list[i] = np.flip(img_list[i], axis = j).copy()
+                        mask = np.flip(mask, axis = j).copy()
+                                       
         #Downsample each slice
         ds_img_list = [self.downsize(img) for img in img_list]
         
@@ -92,7 +129,18 @@ class BRATS_dataset(Dataset):
         ds_img_list = [torch.from_numpy(img).to(self.device).to(torch.float32)  for img in ds_img_list]
         mask = torch.from_numpy(mask).to(self.device).to(torch.float32)
         
+       
+        if self.binary_mask:
+            mask[mask>=2] = 1
         
+        if self.concatenate_modalities:
+            concat_img = torch.zeros((self.num_slices * 4, self.output_dim[0], self.output_dim[1]))
+            concat_ds_img = torch.zeros((self.num_slices * 4, self.input_dim[0], self.input_dim[1]))
+            for i in range(4):
+                concat_img[i*self.num_slices : (i+1)*self.num_slices, :, :] = img_list[i]
+                concat_ds_img[i*self.num_slices : (i+1)*self.num_slices, :, :] = ds_img_list[i]
+                
+            return concat_img, concat_ds_img, mask
         
         #Image list contains 2.5D slices of: flair, t1, t1ce, t2 (in order)
         return img_list, ds_img_list, mask
