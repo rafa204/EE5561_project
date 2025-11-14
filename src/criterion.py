@@ -24,7 +24,7 @@ def kl_loss(mu, logvar):
 MSE_loss = nn.MSELoss()
 dice_loss = SoftDiceLoss()
 
-def combined_loss(seg_out, seg_target, vae_out, vae_target, mu, logvar, w1 = 0.1, w2 = 0.1):
+def combined_loss(seg_out, seg_target, vae_out, vae_target, mu, logvar, w1 = 0, w2 = 0):
     
     lossSD = dice_loss(seg_out, seg_target) 
     lossL2 = MSE_loss(vae_out, vae_target)
