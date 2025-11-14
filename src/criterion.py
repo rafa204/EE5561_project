@@ -7,13 +7,14 @@ class SoftDiceLoss(nn.Module):
         self.epsilon = epsilon
 
     def forward(self, pred, target):
-        return soft_dice_loss(pred, target, self.epsilon)
+        return (1-soft_dice_coeff(pred, target, self.epsilon)).sum(dim = 1).mean() #Sum loss channels
     
-def soft_dice_loss(pred, target, epsilon=1e-6):
+def soft_dice_coeff(pred, target, epsilon=1e-6):
     intersection = (pred * target).sum(dim=(2, 3))
     denominator = (pred ** 2).sum(dim=(2, 3)) + (target ** 2).sum(dim=(2, 3))
     dice = (2. * intersection) / (denominator + epsilon)
-    return dice.mean()
+    
+    return dice #Output size = [num_batches, num_channels]
 
 def kl_loss(mu, logvar):
     var = torch.exp(logvar)
@@ -21,10 +22,11 @@ def kl_loss(mu, logvar):
     return kl
 
 MSE_loss = nn.MSELoss()
+dice_loss = SoftDiceLoss()
 
 def combined_loss(seg_out, seg_target, vae_out, vae_target, mu, logvar, w1 = 0.1, w2 = 0.1):
     
-    lossSD = soft_dice_loss(seg_out, seg_target.long()) 
+    lossSD = dice_loss(seg_out, seg_target) 
     lossL2 = MSE_loss(vae_out, vae_target)
     lossKL = kl_loss(mu, logvar)
         
