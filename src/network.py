@@ -9,7 +9,7 @@ import numpy as np
 # Takes slices as channels
 # Assuming full image (160x192x128)
 class VAE_UNET(nn.Module):
-    def __init__(self, in_channels, input_dim=np.asarray([192,128], dtype=np.int64), HR_dim=np.asarray([192,128], dtype=np.int64), num_classes = 5):
+    def __init__(self, in_channels, input_dim=np.asarray([192,128], dtype=np.int64), HR_dim=np.asarray([192,128], dtype=np.int64), num_classes = 4):
         super(VAE_UNET, self).__init__()
 
         # Dimensions
@@ -154,6 +154,12 @@ class VAE_UNET(nn.Module):
 
         self.Vend = nn.Conv2d(32, 1, kernel_size=1)
         
+    def init_weights_gaussian(m):
+        if isinstance(m, nn.Linear):
+            torch.nn.init.normal_(m.weight, mean=0.0, std=0.01)
+            if m.bias is not None:
+                torch.nn.init.constant_(m.bias, 0.0)
+        
 
     def forward(self, x):
         # Encoder layers
@@ -214,6 +220,8 @@ class ResidualBlock(nn.Module):
 
     def forward(self, x):
         return x + self.res_layers(x)
+    
+
 
 """
 HR_input = np.asarray([192, 128], np.int64)
