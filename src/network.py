@@ -220,7 +220,73 @@ class ResidualBlock(nn.Module):
 
     def forward(self, x):
         return x + self.res_layers(x)
-    
+
+# Simple UNET based on paper
+class UNET(nn.Module):
+    def __init__(self, in_channels, num_classes = 4):
+        super(UNET, self).__init__()
+
+        # Encoder Layers
+        self.E1 = nn.Sequential(
+            nn.Conv2d(in_channels, 32, kernel_size=3, padding=1),
+            nn.Dropout2d(p=0.2), 
+            ResidualBlock(32)
+        )
+        self.E2 = nn.Sequential(
+            nn.Conv2d(32, 64, kernel_size=3, stride=2, padding=1),
+            ResidualBlock(64),
+            ResidualBlock(64)
+        )
+        self.E3 = nn.Sequential(
+            nn.Conv2d(64, 128, kernel_size=3, stride=2, padding=1),
+            ResidualBlock(128),
+            ResidualBlock(128)
+        )
+        self.E4 = nn.Sequential(
+            nn.Conv2d(128, 256, kernel_size=3, stride=2, padding=1),
+            ResidualBlock(256),
+            ResidualBlock(256),
+            ResidualBlock(256),
+            ResidualBlock(256)
+        )
+
+        # Decoder Layers
+        self.D1 = nn.Sequential(
+            nn.Conv2d(256, 128, kernel_size=1),
+            nn.Upsample(scale_factor=2, mode='bilinear')
+        )
+        self.D2 = nn.Sequential(
+            ResidualBlock(128),
+            nn.Conv2d(128, 64, kernel_size=1),
+            nn.Upsample(scale_factor=2, mode='bilinear')
+        )
+        self.D3 = nn.Sequential(
+            ResidualBlock(64),
+            nn.Conv2d(64, 32, kernel_size=1),
+            nn.Upsample(scale_factor=2, mode='bilinear')
+        )
+
+        self.D4 = nn.Sequential(
+            ResidualBlock(32),
+            nn.Conv2d(32, num_classes-1, kernel_size=1),
+            nn.Sigmoid()
+        )
+
+
+    def forward(self, x):
+        # Encoder layers
+        enc_out_1 = self.E1(x)
+        enc_out_2 = self.E2(enc_out_1)
+        enc_out_3 = self.E3(enc_out_2)
+        enc_out_4 = self.E4(enc_out_3)
+
+        # Decoder layers
+        dec_out = self.D1(enc_out_4)
+        dec_out = self.D2(enc_out_3 + dec_out)
+        dec_out = self.D3(enc_out_2 + dec_out)
+        dec_out = self.D4(enc_out_1 + dec_out)
+
+        return dec_out
 
 
 """
@@ -233,3 +299,11 @@ print("Input shape:", x.shape)
 print("Decoder Output shape:", D.shape)
 print("VAE output shape:", V.shape)
 """
+
+if __name__ == "__main__":
+    print("Testing Network")
+    test_net = UNET(1, 4)
+    x = torch.rand(4, 1, 240, 240)
+    D = test_net(x)
+    print("Input shape:", x.shape)
+    print("Decoder Output shape:", D.shape)
