@@ -26,7 +26,7 @@ class BRATS_dataset(Dataset):
     num_volumes: number of volumes to be used for the dataset. The default value is to use all volumes availeable.
     """
     
-    def __init__(self, dataset_path, device, num_slices = 3, ds_ratio = 2, downsamp_type = 'bicubic', data_shape = [240,240,155], num_volumes = np.inf, concatenate_modalities = False, binary_mask = False, augment = True):
+    def __init__(self, dataset_path, device, num_slices = 3, ds_ratio = 2, downsamp_type = 'bicubic', data_shape = [240,240,155], num_volumes = np.inf, slices_per_volume = 1, concatenate_modalities = False, binary_mask = False, augment = True):
         
         self.dataset_path = Path(dataset_path)
         self.device = device
@@ -34,14 +34,18 @@ class BRATS_dataset(Dataset):
         self.ds_ratio = ds_ratio
         self.data_shape = data_shape
         self.downsamp_type = downsamp_type
-        self.slices_per_volume = data_shape[2] - 2*(num_slices//2)
         self.output_dim = np.array([240,240,num_slices], dtype = np.int64)
         self.input_dim = np.array([240//ds_ratio,240//ds_ratio,num_slices], dtype = np.int64)
         self.augment = augment
         self.binary_mask = binary_mask
         self.concatenate_modalities = concatenate_modalities
         
-
+        if slices_per_volume >= data_shape[2] - 2*(num_slices//2):
+            self.slices_per_volume = data_shape[2] - 2*(num_slices//2)
+        else:
+            self.slices_per_volume = slices_per_volume
+        
+        
         subdir_list = [p for p in self.dataset_path.iterdir() if p.is_dir()]
         
         if(len(subdir_list) > num_volumes):
@@ -52,6 +56,7 @@ class BRATS_dataset(Dataset):
         
         #Total length of the dataset = number of 2.5D slices * number of volumes
         self.length = self.slices_per_volume * self.num_volumes
+         
         
     def __len__(self):
         return self.length
@@ -74,10 +79,9 @@ class BRATS_dataset(Dataset):
         
         return data
         
-
     
     def downsize(self, img):
-        #Downsaize in each channel
+        #Downsize in each channel
         ds = 1/float(self.ds_ratio)
         if self.downsamp_type == 'bicubic':
             downscaled_image = ndimage.zoom(img, (1, ds, ds), order=3)
@@ -90,6 +94,10 @@ class BRATS_dataset(Dataset):
         #Each idx will get one 2.5D slice of a particular volume
         volume_idx = idx // self.slices_per_volume
         slice_idx = idx % self.slices_per_volume
+        
+        if self.slices_per_volume == 1:
+            slice_idx = self.data_shape[2]//2
+            
         slice_range = np.arange(slice_idx, slice_idx + self.num_slices)
         
         volume_path = self.subdir_list[volume_idx]
