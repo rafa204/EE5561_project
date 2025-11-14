@@ -9,14 +9,14 @@ from pathlib import Path
 
 #=========== SETUP PARAMETERS ===============
 
-label = "test1"
+label = "test2"
 num_slices = 3
 downsamp_type = 'bilinear'
 ds_ratio = 2
 
-num_epochs = 100
-learning_rate = 1e-4
-batch_size = 64
+num_epochs = 1000
+learning_rate = 1e-5
+batch_size = 1
 validation = True
 save_model_each_epoch = True
 
@@ -30,11 +30,11 @@ validation_metrics = np.zeros((num_epochs,3))
 
 #=========== SETUP DATASETS AND DATA LOADERS ===============
 
-dataset = BRATS_dataset(data_path, device, num_slices = num_slices, ds_ratio = ds_ratio, downsamp_type = downsamp_type)
+dataset = BRATS_dataset(data_path, device, num_slices = num_slices, ds_ratio = ds_ratio, downsamp_type = downsamp_type, slices_per_volume = 1, num_volumes = 2)
 
 # Determine Split Ratios
-train_ratio = 0.7
-val_ratio = 0.15
+train_ratio = 0.5
+val_ratio = 0.5
 
 train_size = int(train_ratio * len(dataset))
 val_size = int(val_ratio * len(dataset))
@@ -47,6 +47,8 @@ train_dataset, val_dataset, test_dataset = random_split(
 )
 
 train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+val_loader = train_loader
+
 val_loader = DataLoader(val_dataset, batch_size=1)
 test_loader = DataLoader(test_dataset, batch_size=1)
 
@@ -100,6 +102,13 @@ for epoch in range(num_epochs):
         'model_state_dict': model.state_dict(),
         'optimizer_state_dict': optimizer.state_dict(),
         'scheduler_state_dict': scheduler.state_dict(),
+        'num_slices' = num_slices
+        'downsamp_type' = downsamp_type
+        'downsamp_type' = ds_ratio
+        'num_epochs' = num_epochs
+        'learning_rate' = learning_rate
+        'batch_size' = batch_size
+        'validation' = True
         }
         torch.save(checkpoint, results_path / "checkpoint.pth.tar")
 
