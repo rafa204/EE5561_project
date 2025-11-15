@@ -11,13 +11,20 @@ import os
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
+#Choose parameters
 class Training_Parameters:
     def __init__(self):
         
+        #Choose network type VAE_2D, UNET_2D or ref_3D
+        #If using a 2D version, volume_dim should be False
+        #If using a 3D version, volume_dim should be True. 
+        #For 3D version, use num_slices >= 16 and a power of 2
+        self.net = "ref_3D"                     
+        
         #Data prep parameters
-        self.volume_dim = True          #To use multiple modalities AND 2.5D slabs. This adds volume dim and requires 3dConv()
-        self.num_slices = 16              #Number of slices per 2.5D slab
-        self.slices_per_volume = 2       #How many slices to use per volume (used to restrict how much data we use)
+        self.volume_dim = True           #To use multiple modalities AND 2.5D slabs. This adds volume dim and requires 3dConv()
+        self.num_slices = 16             #Number of slices per 2.5D slab
+        self.slices_per_volume = 1       #How many slices to use per volume (used to restrict how much data we use)
         self.data_shape = [240,240,155]  #Shape of each volume
         self.downsamp_type = 'bilinear'  #Type of downsampling (maybe we can generalize to any type of degradation)
         self.ds_ratio = 1                #Downsampling factor (if doing downsamplin at all)
@@ -25,16 +32,15 @@ class Training_Parameters:
         self.cat_modalities = False      #If we want to concatenate MRI modalities along channel dimension           
         self.augment = False             #Perform data augmentation (random scale and shift) or not
         self.binary_mask = False         #Have yes/no singel channel mask instead of 3 channels for tumor types
-        self.volume_dim = True          #To use multiple modalities AND 2.5D slabs, adds volume dim to inputs
         self.modality_index = 0          #If using one modality, choose which one
         
         self.validation = True              #Whether you want validation each epoch
-        self.save_model_each_epoch = True    #Save model and training parameters every epoch
-        self.train_ratio = 0.9                 #What ratio of dataset for training (Training ratio = 1 - validation ratio)
-        self.net = "ref"                     #Choose VAE, UNET or ref
+        self.save_model_each_epoch = True   #Save model and training parameters every epoch
+        self.train_ratio = 0.9              #What ratio of dataset for training (Training ratio = 1 - validation ratio)
+        
          
         #Basic parameters
-        self.num_epochs = 300               
+        self.num_epochs = 100               
         self.learning_rate = 1e-4
         self.batch_size = 1
 
@@ -160,7 +166,7 @@ class BRATS_dataset(Dataset):
             for j, ax in enumerate(axis_flip):
                 if ax: mask_3d = np.flip(mask_3d, axis = j).copy()
                                        
-        #Downsample each slice
+        #Downsample each image (if needed)
         inp_img_list = [self.downsize(img) for img in img_list]
         class_list = [1,2,4]
         
@@ -176,8 +182,11 @@ class BRATS_dataset(Dataset):
                 
         out_img_list = [torch.from_numpy(img).to(self.device).to(torch.float32) for img in img_list]
         inp_img_list = [torch.from_numpy(img).to(self.device).to(torch.float32)  for img in inp_img_list]
+        
+        
         mask_3d = torch.from_numpy(mask_3d).to(self.device).to(torch.float32)
-        mask_2d = mask_3d[:,:,self.num_slices//2].squeeze()
+        mask_2d = mask_3d[:,self.num_slices//2,:,:].squeeze()
+        
                 
 
         if self.cat_modalities:
@@ -190,6 +199,7 @@ class BRATS_dataset(Dataset):
             return concat_img, concat_inp_img, mask
         
         if self.volume_dim:
+
             vol_out_img = torch.zeros((4, self.num_slices, self.output_dim[0], self.output_dim[1]), device = device)
             vol_inp_img = torch.zeros((4, self.num_slices, self.input_dim[0], self.input_dim[1]), device = device)
             vol_mask = torch.zeros((4, self.num_slices, self.input_dim[0], self.input_dim[1]), device = device)
@@ -203,4 +213,4 @@ class BRATS_dataset(Dataset):
             return out_img_list[self.modality_index], inp_img_list[self.modality_index], mask_2d
         
         #Image list contains 2.5D slices of: flair, t1, t1ce, t2 (in order)
-        return out_img_list, inp_img_list, mask_2d
+        return out_img_list_2d, inp_img_list_2d, mask_2d
