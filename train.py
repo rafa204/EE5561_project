@@ -22,6 +22,10 @@ data_path = '../BRATS20/BraTS2020_TrainingData/MICCAI_BraTS2020_TrainingData/'
 results_path = Path('training_results')/label
 results_path.mkdir(parents=True, exist_ok=True)
 
+#Save the parameters to keep track of what we ran
+with open(results_path /'params.pkl', 'wb') as f:
+    pickle.dump(params, f)
+
 validation_metrics = np.zeros((params.num_epochs,3))
 
 #=========== SETUP DATASETS AND DATA LOADERS ===============
@@ -45,13 +49,13 @@ val_loader = DataLoader(val_dataset, batch_size=1)
 #=========== SETUP MODEL AND OPTIMIZER ===============
 
 #With VAE branch
-if params.net == "VAE":
+if params.net == "VAE_2D":
     model = VAE_UNET(params.num_slices, input_dim=dataset.input_dim, HR_dim=dataset.output_dim)
     criterion = combined_loss
-elif params.net == "UNET":
+elif params.net == "UNET_2D":
     model = UNET(params.num_slices)
     criterion = dice_loss
-elif params.net == "ref":
+elif params.net == "ref_3D":
     model = NvNet(inChans, input_shape, seg_outChans, activation, normalization, VAE_enable, mode='trilinear')
     criterion = CombinedLoss_ref()
     
@@ -66,6 +70,9 @@ scheduler = LambdaLR(optimizer, lr_lambda=lr_lambda)
 #=========== TRAINING LOOP ===============
 print("Starting training "+ label)
 
+best_val_dice = 0
+best_epoch = True
+
 for epoch in range(params.num_epochs):
     
     model.train()
@@ -74,17 +81,17 @@ for epoch in range(params.num_epochs):
     for out_imgs, inp_imgs, mask in train_bar:
         
         optimizer.zero_grad()
-        if params.net == "VAE":
+        if params.net == "VAE_2D":
             central_index = params.num_slices//2
             central_slice = out_imgs[:,central_index,:,:].unsqueeze(1) #Get central slice for VAE output
             seg_out, vae_out, mu, logvar = model(inp_imgs)
             loss = criterion(seg_out, mask, vae_out, central_slice, mu, logvar)
-        elif params.net == "UNET":
+        elif params.net == "UNET_2D":
             central_index = params.num_slices//2
             central_slice = out_imgs[:,central_index,:,:].unsqueeze(1) #Get central slice for VAE output
             seg_out = model(inp_imgs)
             loss = criterion(seg_out, mask)
-        elif params.net == "ref":
+        elif params.net == "ref_3D":
             seg_y_pred, rec_y_pred, y_mid = model(inp_imgs)
             loss = criterion(seg_y_pred, mask, rec_y_pred, out_imgs, y_mid)
 
@@ -99,9 +106,12 @@ for epoch in range(params.num_epochs):
     if(params.validation):
         validation_metrics[epoch,:] = test_model(model, val_loader, params.net)
         np.save(results_path / "training_metrics.npy", validation_metrics)
+        dice = validation_metrics[epoch,0]
+        best_epoch = dice > best_val_dice
+        if(best_epoch): best_val_dice = dice
     
      #---Logging 
-    if(params.save_model_each_epoch):
+    if(best_epoch and params.save_model_each_epoch):
         checkpoint = {
         'epoch': epoch,
         'model_state_dict': model.state_dict(),
@@ -109,8 +119,8 @@ for epoch in range(params.num_epochs):
         'scheduler_state_dict': scheduler.state_dict()
         }
         torch.save(checkpoint, results_path / "checkpoint.pth.tar")
-        with open(results_path /'params.pkl', 'wb') as f:
-            pickle.dump(params, f)
+        
+        plot_examples(model, val_dataset, [0], results_path, params.net)
 
   
     scheduler.step() #Adjust learning rate

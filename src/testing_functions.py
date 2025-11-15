@@ -6,7 +6,7 @@ from src.criterion import *
 from src.reference_net import CustomKLLoss
 
 
-kl_loss_ref = CustomKLLoss()
+kl_loss_ref = CustomKLLoss() #KL divergence from the github repo
 
 def test_model(model, test_loader, net_type):
     """
@@ -24,8 +24,8 @@ def test_model(model, test_loader, net_type):
         for out_imgs, inp_imgs, mask in test_bar:
            
             
-            if net_type == "VAE":
-                central_index = params.num_slices//2
+            if net_type == "VAE_2D":
+                central_index = out_imgs.shape[1]//2
                 central_slice = out_imgs[:,central_index,:,:].unsqueeze(1) #Get central slice for VAE output
                 seg_out, vae_out, mu, logvar = model(inp_imgs)
                 metrics[0] += soft_dice_coeff(seg_out, mask).mean()
@@ -33,7 +33,7 @@ def test_model(model, test_loader, net_type):
                 metrics[2] += kl_loss(mu, logvar)
 
 
-            elif net_type == "ref":
+            elif net_type == "ref_3D":
                 seg_y_pred, rec_y_pred, y_mid = model(inp_imgs)
                 est_mean, est_std = (y_mid[:, :128], y_mid[:, 128:])
                 metrics[0] += soft_dice_coeff(seg_y_pred, mask).mean()
@@ -73,16 +73,17 @@ def plot_examples(model, test_dataset, slices, save_path, net_type):
 
             
         
-        if net_type == "VAE":
+        if net_type == "VAE_2D":
             
             seg_out, vae_out, mu, logvar = model(inp_img)
             seg_out_multi = bin_mask_2_multi(seg_out.squeeze())
             
+            central_index = out_img.shape[1]//2
+            central_slice = out_img[:,central_index,:,:].unsqueeze(1) #Get central slice for VAE output
+            
             dice_coeff = soft_dice_coeff(seg_out, mask).mean()
             mse_loss = MSE_loss(vae_out, central_slice)
             
-            central_idx = out_img.shape[1]//2
-            central_slice = out_img[central_idx,:,:].unsqueeze(0).unsqueeze(0)
             mask_multi = bin_mask_2_multi(mask.squeeze())
 
             fig, ax = plt.subplots(2,2,figsize = (10,5))
@@ -96,7 +97,7 @@ def plot_examples(model, test_dataset, slices, save_path, net_type):
             ax[1,1].imshow(vae_out.squeeze().cpu())
             ax[1,1].set_title(f"VAE output | MSE = {mse_loss:.3f}")
             
-        elif net_type == "UNET":
+        elif net_type == "UNET_2D":
             
             seg_out = model(ds_img_list[0].unsqueeze(0))
             dice_coeff = soft_dice_coeff(seg_out, mask).mean()
@@ -114,10 +115,9 @@ def plot_examples(model, test_dataset, slices, save_path, net_type):
             ax[2].imshow(seg_out_multi.cpu())
             ax[2].set_title(f"Predicted mask | Dice = {dice_coeff:.3f}")
             
-        elif net_type == "ref":
+        elif net_type == "ref_3D":
             seg_y_pred, rec_y_pred, y_mid = model(inp_img)
             
-            print(seg_y_pred.shape)
             
             dice_coeff = soft_dice_coeff(seg_y_pred, mask).mean()
             mse_loss = MSE_loss(rec_y_pred, out_img)
@@ -147,8 +147,8 @@ def plot_examples(model, test_dataset, slices, save_path, net_type):
             ax.tick_params(axis='y', length=0)
             
         fig.tight_layout()
-        fig.show()
         fig.savefig(save_path / f"out_{j}.png")
+        plt.close(fig)
         j += 1
         
     
