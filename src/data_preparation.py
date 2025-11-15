@@ -14,25 +14,28 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 class Training_Parameters:
     def __init__(self):
         
-        self.num_slices = 1                  #Number of slices per 2.5D slab
-        self.data_shape = [240,240,155]      #Shape of each volume
-        self.downsamp_type = 'bilinear'      #Type of downsampling (maybe we can generalize to any type of degradation)
-        self.ds_ratio = 1                    #Downsampling factor
-        self.validation = True               #Whether you want validation each epoch
-        self.save_model_each_epoch = True    #Save model and training parameters every epoch
-        self.slices_per_volume = 1           #How many slices to use per volume (used to restrict how much data we use)
-        self.train_ratio = 0.9               #What ratio of dataset for training (Training ratio = 1 - validation ratio)
-        self.concatenate_modalities = False  #If we want to concatenate MRI modalities along channel dimension           
-        self.augment = False                  #Perform data augmentation (random scale and shift) or not
-        self.num_volumes = 20                #How many volumes from the original dataset to use
-        self.VAE = True                      #Train using VAE branch or just UNET branch
-        self.binary_mask = False             #Have yes/no singel channel mask instead of 3 channels for tumor types
-        self.volume_dim = False               #To use multiple modalities AND 2.5D slabs, adds volume dim to inputs
-        self.modality_index = 0              #If using one modality, choose which one
+        #Data prep parameters
+        self.volume_dim = True          #To use multiple modalities AND 2.5D slabs. This adds volume dim and requires 3dConv()
+        self.num_slices = 16              #Number of slices per 2.5D slab
+        self.slices_per_volume = 2       #How many slices to use per volume (used to restrict how much data we use)
+        self.data_shape = [240,240,155]  #Shape of each volume
+        self.downsamp_type = 'bilinear'  #Type of downsampling (maybe we can generalize to any type of degradation)
+        self.ds_ratio = 1                #Downsampling factor (if doing downsamplin at all)
+        self.num_volumes = np.inf             #How many volumes from the original dataset to use
+        self.cat_modalities = False      #If we want to concatenate MRI modalities along channel dimension           
+        self.augment = False             #Perform data augmentation (random scale and shift) or not
+        self.binary_mask = False         #Have yes/no singel channel mask instead of 3 channels for tumor types
+        self.volume_dim = True          #To use multiple modalities AND 2.5D slabs, adds volume dim to inputs
+        self.modality_index = 0          #If using one modality, choose which one
         
+        self.validation = True              #Whether you want validation each epoch
+        self.save_model_each_epoch = True    #Save model and training parameters every epoch
+        self.train_ratio = 0.9                 #What ratio of dataset for training (Training ratio = 1 - validation ratio)
+        self.net = "ref"                     #Choose VAE, UNET or ref
+         
         #Basic parameters
-        self.num_epochs = 100               
-        self.learning_rate = 1e-5
+        self.num_epochs = 300               
+        self.learning_rate = 1e-4
         self.batch_size = 1
 
 #Define dataset for the training
@@ -58,7 +61,7 @@ class BRATS_dataset(Dataset):
         self.input_dim = np.array([240//self.ds_ratio,240//self.ds_ratio,self.num_slices], dtype = np.int64)
         self.augment = params.augment
         self.binary_mask = params.binary_mask
-        self.concatenate_modalities = params.concatenate_modalities
+        self.cat_modalities = params.cat_modalities
         self.volume_dim = params.volume_dim
         self.modality_index = params.modality_index
         
@@ -123,7 +126,7 @@ class BRATS_dataset(Dataset):
         slice_idx = self.slice_indices[slice_idx_temp] 
    
             
-        slice_range = np.arange(slice_idx, slice_idx + self.num_slices)
+        slice_range = np.arange(slice_idx - self.num_slices//2, slice_idx + self.num_slices//2)
         
         volume_path = self.subdir_list[volume_idx]
         file_list = [p for p in volume_path.iterdir() if p.is_file()]
@@ -133,16 +136,14 @@ class BRATS_dataset(Dataset):
         
         #Get only the needed 2.5D slice
         data_list = [vol[:,:,slice_range] for vol in vol_list]
+        data_list = [img.transpose(2,0,1) for img in data_list] #Channel dim first
         
-        #Get segmentation mask from the list and extract its central slice
-        mask = data_list.pop(1)[:,:,self.num_slices//2].squeeze()
-        
+        #Get segmentation mask from the list
+        mask_3d = data_list.pop(1)
         
         #Normalize each 2.5D slice
         img_list = [self.zscore(img) if img.max()>0 else img for img in data_list]
     
-        img_list = [img.transpose(2,0,1) for img in img_list] #Channel dim first
-        
         
         #Apply augmentations
         if(self.augment):
@@ -156,30 +157,30 @@ class BRATS_dataset(Dataset):
                 for j, ax in enumerate(axis_flip):
                     if ax: img_list[i] = np.flip(img_list[i], axis = j).copy()
                         
-            for j, ax in enumerate(axis_flip[1:3]):
-                if ax: mask = np.flip(mask, axis = j).copy()
+            for j, ax in enumerate(axis_flip):
+                if ax: mask_3d = np.flip(mask_3d, axis = j).copy()
                                        
         #Downsample each slice
         inp_img_list = [self.downsize(img) for img in img_list]
         class_list = [1,2,4]
         
-       
         if self.binary_mask:
             mask[mask>=2] = 1
         else:
-            full_mask = np.zeros((3,240,240), dtype = int)
+            full_mask = np.zeros((3,self.num_slices,240,240), dtype = int)
             for i in range(0,3):
-                temp_mask = np.zeros_like(mask)
-                temp_mask[mask == class_list[i]] = 1
-                full_mask[i,:,:] = temp_mask
-            mask = full_mask
+                temp_mask = np.zeros_like(mask_3d)
+                temp_mask[mask_3d == class_list[i]] = 1
+                full_mask[i,:,:,:] = temp_mask
+            mask_3d = full_mask
                 
         out_img_list = [torch.from_numpy(img).to(self.device).to(torch.float32) for img in img_list]
         inp_img_list = [torch.from_numpy(img).to(self.device).to(torch.float32)  for img in inp_img_list]
-        mask = torch.from_numpy(mask).to(self.device).to(torch.float32)
+        mask_3d = torch.from_numpy(mask_3d).to(self.device).to(torch.float32)
+        mask_2d = mask_3d[:,:,self.num_slices//2].squeeze()
                 
 
-        if self.concatenate_modalities:
+        if self.cat_modalities:
             concat_out_img = torch.zeros((self.num_slices * 4, self.output_dim[0], self.output_dim[1]))
             concat_inp_img = torch.zeros((self.num_slices * 4, self.input_dim[0], self.input_dim[1]))
             for i in range(4):
@@ -189,16 +190,17 @@ class BRATS_dataset(Dataset):
             return concat_img, concat_inp_img, mask
         
         if self.volume_dim:
-            vol_out_img = torch.zeros((4, self.num_slices, self.output_dim[0], self.output_dim[1]))
-            vol_inp_img = torch.zeros((4, self.num_slices, self.input_dim[0], self.input_dim[1]))
+            vol_out_img = torch.zeros((4, self.num_slices, self.output_dim[0], self.output_dim[1]), device = device)
+            vol_inp_img = torch.zeros((4, self.num_slices, self.input_dim[0], self.input_dim[1]), device = device)
+            vol_mask = torch.zeros((4, self.num_slices, self.input_dim[0], self.input_dim[1]), device = device)
             for i in range(4):
                 vol_out_img[i, :, :, :] = out_img_list[i]
                 vol_inp_img[i, :, :, :] = inp_img_list[i]
                 
-            return vol_out_img, vol_inp_img, mask
+            return vol_out_img, vol_inp_img, mask_3d
         
         if(self.modality_index is not None):
-            return out_img_list[self.modality_index], inp_img_list[self.modality_index], mask
+            return out_img_list[self.modality_index], inp_img_list[self.modality_index], mask_2d
         
         #Image list contains 2.5D slices of: flair, t1, t1ce, t2 (in order)
-        return out_img_list, inp_img_list, mask
+        return out_img_list, inp_img_list, mask_2d

@@ -4,14 +4,14 @@ from src.data_preparation import *
 from src.network import *
 from src.criterion import *
 from src.testing_functions import *
-# from src.reference_network import *
+from src.reference_net import *
 from torch.optim.lr_scheduler import LambdaLR
 from pathlib import Path
 import pickle
 
 #=========== SETUP PARAMETERS ===============
 
-label = "test3" #This is the name of the results folder
+label = "ref_network_test" #This is the name of the results folder
        
 params = Training_Parameters() #Initialize training parameters, you can change them in src/data_preparation.py
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -45,12 +45,15 @@ val_loader = DataLoader(val_dataset, batch_size=1)
 #=========== SETUP MODEL AND OPTIMIZER ===============
 
 #With VAE branch
-if params.VAE: 
+if params.net == "VAE":
     model = VAE_UNET(params.num_slices, input_dim=dataset.input_dim, HR_dim=dataset.output_dim)
-    #model = NvNet(3, [240,240], 3, "relu", "group_normalization", "True", mode='bilinear')
-
-else: #Without VAE branch (only UNET)
+    criterion = combined_loss
+elif params.net == "UNET":
     model = UNET(params.num_slices)
+    criterion = dice_loss
+elif params.net == "ref":
+    model = NvNet(inChans, input_shape, seg_outChans, activation, normalization, VAE_enable, mode='trilinear')
+    criterion = CombinedLoss_ref()
     
 model = model.to(device)
 
@@ -59,8 +62,6 @@ optimizer = torch.optim.Adam(model.parameters(), lr = params.learning_rate, weig
 # LR Scheduler
 lr_lambda = lambda epoch: (1 - epoch / params.num_epochs) ** 0.9
 scheduler = LambdaLR(optimizer, lr_lambda=lr_lambda)
-criterion = combined_loss #For the VAE option, not UNET
-
 
 #=========== TRAINING LOOP ===============
 print("Starting training "+ label)
@@ -72,18 +73,21 @@ for epoch in range(params.num_epochs):
 
     for out_imgs, inp_imgs, mask in train_bar:
         
- 
-        central_index = params.num_slices//2
-        central_slice = out_imgs[:,central_index,:,:].unsqueeze(1) #Get central slice for VAE output
-
         optimizer.zero_grad()
-        if params.VAE:
+        if params.net == "VAE":
+            central_index = params.num_slices//2
+            central_slice = out_imgs[:,central_index,:,:].unsqueeze(1) #Get central slice for VAE output
             seg_out, vae_out, mu, logvar = model(inp_imgs)
             loss = criterion(seg_out, mask, vae_out, central_slice, mu, logvar)
-        else:
+        elif params.net == "UNET":
+            central_index = params.num_slices//2
+            central_slice = out_imgs[:,central_index,:,:].unsqueeze(1) #Get central slice for VAE output
             seg_out = model(inp_imgs)
-            loss = dice_loss(seg_out, mask)
-        
+            loss = criterion(seg_out, mask)
+        elif params.net == "ref":
+            seg_y_pred, rec_y_pred, y_mid = model(inp_imgs)
+            loss = criterion(seg_y_pred, mask, rec_y_pred, out_imgs, y_mid)
+
         
         loss.backward()
         optimizer.step()
@@ -93,7 +97,7 @@ for epoch in range(params.num_epochs):
     
     #---Validation    
     if(params.validation):
-        validation_metrics[epoch,:] = test_model(model, val_loader, params.VAE)
+        validation_metrics[epoch,:] = test_model(model, val_loader, params.net)
         np.save(results_path / "training_metrics.npy", validation_metrics)
     
      #---Logging 
@@ -110,3 +114,5 @@ for epoch in range(params.num_epochs):
 
   
     scheduler.step() #Adjust learning rate
+    
+    
