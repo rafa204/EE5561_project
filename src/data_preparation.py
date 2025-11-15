@@ -11,6 +11,27 @@ import os
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
+class Training_Parameters:
+    def __init__(self):
+        
+        self.num_slices = 1                  #Number of slices per 2.5D slab
+        self.data_shape = [240,240,155]      #Shape of each volume
+        self.downsamp_type = 'bilinear'      #Type of downsampling (maybe we can generalize to any type of degradation)
+        self.ds_ratio = 1                    #Downsampling factor
+        self.validation = True               #Whether you want validation each epoch
+        self.save_model_each_epoch = True    #Save model and training parameters every epoch
+        self.slices_per_volume = 1           #How many slices to use per volume (used to restrict how much data we use)
+        self.train_ratio = 0.9               #What ratio of dataset for training (Training ratio = 1 - validation ratio)
+        self.concatenate_modalities = False  #If we want to concatenate MRI modalities along channel dimension           
+        self.augment = True                  #Perform data augmentation (random scale and shift) or not
+        self.num_volumes = 20                #How many volumes from the original dataset to use
+        self.VAE = True                      #Train using VAE branch or just UNET branch
+        self.binary_mask = False             #Have yes/no singel channel mask instead of 3 channels for tumor types
+        
+        #Basic parameters
+        self.num_epochs = 100               
+        self.learning_rate = 1e-5
+        self.batch_size = 1
 
 #Define dataset for the training
 class BRATS_dataset(Dataset):
@@ -19,37 +40,38 @@ class BRATS_dataset(Dataset):
     
     INPUTS:
     dataset_path: path leading to the "MICCAI_BraTS2020_TrainingData" directory
-    num_slices: number of slices in each 2.5D slab
-    ds_ratio: factor by which data is downsampled
-    downsamp_type: what kind of downsampling to use
-    data_shape: size of each volume
-    num_volumes: number of volumes to be used for the dataset. The default value is to use all volumes availeable.
+    device: 
+    params: Training_Parameters instance described above
     """
     
-    def __init__(self, dataset_path, device, num_slices = 3, ds_ratio = 2, downsamp_type = 'bicubic', data_shape = [240,240,155], num_volumes = np.inf, slices_per_volume = 1, concatenate_modalities = False, binary_mask = False, augment = True):
+    def __init__(self, dataset_path, device, params):
         
         self.dataset_path = Path(dataset_path)
         self.device = device
-        self.num_slices = num_slices
-        self.ds_ratio = ds_ratio
-        self.data_shape = data_shape
-        self.downsamp_type = downsamp_type
-        self.output_dim = np.array([240,240,num_slices], dtype = np.int64)
-        self.input_dim = np.array([240//ds_ratio,240//ds_ratio,num_slices], dtype = np.int64)
-        self.augment = augment
-        self.binary_mask = binary_mask
-        self.concatenate_modalities = concatenate_modalities
+        self.num_slices = params.num_slices
+        self.ds_ratio = params.ds_ratio
+        self.data_shape = params.data_shape
+        self.downsamp_type = params.downsamp_type
+        self.output_dim = np.array([240,240,self.num_slices], dtype = np.int64)
+        self.input_dim = np.array([240//self.ds_ratio,240//self.ds_ratio,self.num_slices], dtype = np.int64)
+        self.augment = params.augment
+        self.binary_mask = params.binary_mask
+        self.concatenate_modalities = params.concatenate_modalities
         
-        if slices_per_volume >= data_shape[2] - 2*(num_slices//2):
-            self.slices_per_volume = data_shape[2] - 2*(num_slices//2)
+        
+        if params.slices_per_volume >= self.data_shape[2] - 2*(self.num_slices//2):
+            self.slices_per_volume = self.data_shape[2] - 2*(self.num_slices//2)
         else:
-            self.slices_per_volume = slices_per_volume
+            self.slices_per_volume = params.slices_per_volume
+        
+        #If using a few slices per volume, separate the indices out
+        self.slice_indices = [ ( (i+1) * self.data_shape[2]  ) // (self.slices_per_volume+1) for i in range(self.slices_per_volume) ]
         
         
         subdir_list = [p for p in self.dataset_path.iterdir() if p.is_dir()]
         
-        if(len(subdir_list) > num_volumes):
-            subdir_list = subdir_list[:num_volumes]
+        if(len(subdir_list) > params.num_volumes):
+            subdir_list = subdir_list[:params.num_volumes]
         
         self.subdir_list = subdir_list
         self.num_volumes = len(subdir_list)
@@ -93,10 +115,9 @@ class BRATS_dataset(Dataset):
     def __getitem__(self, idx):
         #Each idx will get one 2.5D slice of a particular volume
         volume_idx = idx // self.slices_per_volume
-        slice_idx = idx % self.slices_per_volume
-        
-        if self.slices_per_volume == 1:
-            slice_idx = self.data_shape[2]//2
+        slice_idx_temp = idx % self.slices_per_volume
+        slice_idx = self.slice_indices[slice_idx_temp] 
+   
             
         slice_range = np.arange(slice_idx, slice_idx + self.num_slices)
         
