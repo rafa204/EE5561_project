@@ -23,10 +23,12 @@ class Training_Parameters:
         self.slices_per_volume = 1           #How many slices to use per volume (used to restrict how much data we use)
         self.train_ratio = 0.9               #What ratio of dataset for training (Training ratio = 1 - validation ratio)
         self.concatenate_modalities = False  #If we want to concatenate MRI modalities along channel dimension           
-        self.augment = True                  #Perform data augmentation (random scale and shift) or not
+        self.augment = False                  #Perform data augmentation (random scale and shift) or not
         self.num_volumes = 20                #How many volumes from the original dataset to use
         self.VAE = True                      #Train using VAE branch or just UNET branch
         self.binary_mask = False             #Have yes/no singel channel mask instead of 3 channels for tumor types
+        self.volume_dim = False               #To use multiple modalities AND 2.5D slabs, adds volume dim to inputs
+        self.modality_index = 0              #If using one modality, choose which one
         
         #Basic parameters
         self.num_epochs = 100               
@@ -57,6 +59,8 @@ class BRATS_dataset(Dataset):
         self.augment = params.augment
         self.binary_mask = params.binary_mask
         self.concatenate_modalities = params.concatenate_modalities
+        self.volume_dim = params.volume_dim
+        self.modality_index = params.modality_index
         
         
         if params.slices_per_volume >= self.data_shape[2] - 2*(self.num_slices//2):
@@ -156,7 +160,7 @@ class BRATS_dataset(Dataset):
                 if ax: mask = np.flip(mask, axis = j).copy()
                                        
         #Downsample each slice
-        ds_img_list = [self.downsize(img) for img in img_list]
+        inp_img_list = [self.downsize(img) for img in img_list]
         class_list = [1,2,4]
         
        
@@ -170,19 +174,31 @@ class BRATS_dataset(Dataset):
                 full_mask[i,:,:] = temp_mask
             mask = full_mask
                 
-        img_list = [torch.from_numpy(img).to(self.device).to(torch.float32) for img in img_list]
-        ds_img_list = [torch.from_numpy(img).to(self.device).to(torch.float32)  for img in ds_img_list]
+        out_img_list = [torch.from_numpy(img).to(self.device).to(torch.float32) for img in img_list]
+        inp_img_list = [torch.from_numpy(img).to(self.device).to(torch.float32)  for img in inp_img_list]
         mask = torch.from_numpy(mask).to(self.device).to(torch.float32)
                 
 
         if self.concatenate_modalities:
-            concat_img = torch.zeros((self.num_slices * 4, self.output_dim[0], self.output_dim[1]))
-            concat_ds_img = torch.zeros((self.num_slices * 4, self.input_dim[0], self.input_dim[1]))
+            concat_out_img = torch.zeros((self.num_slices * 4, self.output_dim[0], self.output_dim[1]))
+            concat_inp_img = torch.zeros((self.num_slices * 4, self.input_dim[0], self.input_dim[1]))
             for i in range(4):
-                concat_img[i*self.num_slices : (i+1)*self.num_slices, :, :] = img_list[i]
-                concat_ds_img[i*self.num_slices : (i+1)*self.num_slices, :, :] = ds_img_list[i]
+                concat_out_img[i*self.num_slices : (i+1)*self.num_slices, :, :] = out_img_list[i]
+                concat_inp_img[i*self.num_slices : (i+1)*self.num_slices, :, :] = inp_img_list[i]
                 
-            return concat_img, concat_ds_img, mask
+            return concat_img, concat_inp_img, mask
+        
+        if self.volume_dim:
+            vol_out_img = torch.zeros((4, self.num_slices, self.output_dim[0], self.output_dim[1]))
+            vol_inp_img = torch.zeros((4, self.num_slices, self.input_dim[0], self.input_dim[1]))
+            for i in range(4):
+                vol_out_img[i, :, :, :] = out_img_list[i]
+                vol_inp_img[i, :, :, :] = inp_img_list[i]
+                
+            return vol_out_img, vol_inp_img, mask
+        
+        if(self.modality_index is not None):
+            return out_img_list[self.modality_index], inp_img_list[self.modality_index], mask
         
         #Image list contains 2.5D slices of: flair, t1, t1ce, t2 (in order)
-        return img_list, ds_img_list, mask
+        return out_img_list, inp_img_list, mask

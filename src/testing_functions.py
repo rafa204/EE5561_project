@@ -17,12 +17,12 @@ def test_model(model, test_loader, VAE):
     metrics = np.zeros((3,))
     
     with torch.no_grad():
-        for img_list, ds_img_list, mask in test_bar:
+        for out_img, inp_img, mask in test_bar:
             
-            central_idx = img_list[0].shape[1]//2
-            central_slice = img_list[0][:,central_idx,:,:].unsqueeze(1)
+            central_idx = out_img.shape[1]//2
+            central_slice = out_img[:,central_idx,:,:].unsqueeze(1)
            
-            seg_out, vae_out, mu, logvar = model(ds_img_list[0])
+            seg_out, vae_out, mu, logvar = model(inp_img)
 
             metrics[0] += soft_dice_coeff(seg_out, mask).mean()
             metrics[1] += MSE_loss(vae_out, central_slice)
@@ -52,19 +52,16 @@ def plot_examples(model, test_dataset, slices, save_path, vae = False):
         j = 0
         for i in slices:
             
-            img_list, ds_img_list, mask = test_dataset[i]
+            out_img, inp_img, mask = test_dataset[i]
             
             mask = mask.unsqueeze(0)
-            central_idx = img_list[0].shape[0]//2
-
-            central_slice = img_list[0][central_idx,:,:].unsqueeze(0).unsqueeze(0)
-            
+            central_idx = out_img.shape[0]//2
+            central_slice = out_img[central_idx,:,:].unsqueeze(0).unsqueeze(0)
             mask_multi = bin_mask_2_multi(mask.squeeze())
         
-
         if vae:
             
-            seg_out, vae_out, mu, logvar = model(ds_img_list[0].unsqueeze(0))
+            seg_out, vae_out, mu, logvar = model(inp_img.unsqueeze(0))
             seg_out_multi = bin_mask_2_multi(seg_out.squeeze())
             
             dice_coeff = soft_dice_coeff(seg_out, mask).mean()

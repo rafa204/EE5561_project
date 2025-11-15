@@ -4,6 +4,7 @@ from src.data_preparation import *
 from src.network import *
 from src.criterion import *
 from src.testing_functions import *
+# from src.reference_network import *
 from torch.optim.lr_scheduler import LambdaLR
 from pathlib import Path
 import pickle
@@ -46,6 +47,8 @@ val_loader = DataLoader(val_dataset, batch_size=1)
 #With VAE branch
 if params.VAE: 
     model = VAE_UNET(params.num_slices, input_dim=dataset.input_dim, HR_dim=dataset.output_dim)
+    #model = NvNet(3, [240,240], 3, "relu", "group_normalization", "True", mode='bilinear')
+
 else: #Without VAE branch (only UNET)
     model = UNET(params.num_slices)
     
@@ -67,20 +70,18 @@ for epoch in range(params.num_epochs):
     model.train()
     train_bar = tqdm(train_loader, desc=f"Epoch {epoch+1}/{params.num_epochs} [Training]")
 
-    for img_list, ds_img_list, mask in train_bar:
+    for out_imgs, inp_imgs, mask in train_bar:
         
-        if torch.all(img_list[0] < 1e-8): #Ignore slices with no brain
-            continue
-        
+ 
         central_index = params.num_slices//2
-        central_slice = img_list[0][:,central_index,:,:].unsqueeze(1) #Get central slice for VAE output
+        central_slice = out_imgs[:,central_index,:,:].unsqueeze(1) #Get central slice for VAE output
 
         optimizer.zero_grad()
         if params.VAE:
-            seg_out, vae_out, mu, logvar = model(ds_img_list[0])
+            seg_out, vae_out, mu, logvar = model(inp_imgs)
             loss = criterion(seg_out, mask, vae_out, central_slice, mu, logvar)
         else:
-            seg_out = model(ds_img_list[0])
+            seg_out = model(inp_imgs)
             loss = dice_loss(seg_out, mask)
         
         
