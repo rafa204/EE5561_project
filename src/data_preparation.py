@@ -19,28 +19,28 @@ class Training_Parameters:
         #If using a 2D version, volume_dim should be False
         #If using a 3D version, volume_dim should be True. 
         #For 3D version, use num_slices >= 16 and a power of 2
-        self.net = "ref_3D"                     
+        self.net = "ref_3D"
         
         #Data prep parameters
         self.volume_dim = True           #To use multiple modalities AND 2.5D slabs. This adds volume dim and requires 3dConv()
-        self.num_slices = 16             #Number of slices per 2.5D slab
+        self.num_slices = 144             #Number of slices per 2.5D slab
         self.slices_per_volume = 1       #How many slices to use per volume (used to restrict how much data we use)
         self.data_shape = [240,240,155]  #Shape of each volume
         self.downsamp_type = 'bilinear'  #Type of downsampling (maybe we can generalize to any type of degradation)
         self.ds_ratio = 1                #Downsampling factor (if doing downsamplin at all)
-        self.num_volumes = np.inf             #How many volumes from the original dataset to use
+        self.num_volumes = 1        #How many volumes from the original dataset to use
         self.cat_modalities = False      #If we want to concatenate MRI modalities along channel dimension           
-        self.augment = False             #Perform data augmentation (random scale and shift) or not
+        self.augment = True             #Perform data augmentation (random scale and shift) or not
         self.binary_mask = False         #Have yes/no singel channel mask instead of 3 channels for tumor types
         self.modality_index = 0          #If using one modality, choose which one
         
         self.validation = True              #Whether you want validation each epoch
         self.save_model_each_epoch = True   #Save model and training parameters every epoch
-        self.train_ratio = 0.9              #What ratio of dataset for training (Training ratio = 1 - validation ratio)
+        self.train_ratio = 0.75              #What ratio of dataset for training (Training ratio = 1 - validation ratio)
         
          
         #Basic parameters
-        self.num_epochs = 100               
+        self.num_epochs = 1               
         self.learning_rate = 1e-4
         self.batch_size = 1
 
@@ -170,9 +170,11 @@ class BRATS_dataset(Dataset):
         inp_img_list = [self.downsize(img) for img in img_list]
         class_list = [1,2,4]
         
+        #If binary mask, we only have one channel
         if self.binary_mask:
             mask[mask>=2] = 1
         else:
+        #Otherwise, create a multi channel mask with 1s in each class, each channel
             full_mask = np.zeros((3,self.num_slices,240,240), dtype = int)
             for i in range(0,3):
                 temp_mask = np.zeros_like(mask_3d)

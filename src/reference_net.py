@@ -1,3 +1,6 @@
+#Copied from https://github.com/amir-aghdam/3D-Brain-Tumor-Segmentation-using-AutoEncoder-Regularization/tree/main
+#Network definition and loss function defitions were pasted here
+
 import torch
 from torch import nn
 
@@ -300,7 +303,6 @@ class NvNet(nn.Module):
     
     
     
-    
 from torch.nn.modules.loss import _Loss
 
 
@@ -358,13 +360,13 @@ class CombinedLoss_ref(_Loss):
         return combined_loss
     
     
-#Config parameters
+#Config parameters for reference network
 
 # Number of Input Channels
 inChans = 4
 
 # Input Image Shape
-input_shape = (1,16, 240, 240)
+input_shape = (1,144, 240, 240)
 
 # Number of Output Classes
 seg_outChans = 3

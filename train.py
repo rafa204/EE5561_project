@@ -11,7 +11,7 @@ import pickle
 
 #=========== SETUP PARAMETERS ===============
 
-label = "ref_network_test" #This is the name of the results folder
+label = "ref_network_test_2" #This is the name of the results folder
        
 params = Training_Parameters() #Initialize training parameters, you can change them in src/data_preparation.py
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -87,14 +87,11 @@ for epoch in range(params.num_epochs):
             seg_out, vae_out, mu, logvar = model(inp_imgs)
             loss = criterion(seg_out, mask, vae_out, central_slice, mu, logvar)
         elif params.net == "UNET_2D":
-            central_index = params.num_slices//2
-            central_slice = out_imgs[:,central_index,:,:].unsqueeze(1) #Get central slice for VAE output
             seg_out = model(inp_imgs)
             loss = criterion(seg_out, mask)
         elif params.net == "ref_3D":
             seg_y_pred, rec_y_pred, y_mid = model(inp_imgs)
             loss = criterion(seg_y_pred, mask, rec_y_pred, out_imgs, y_mid)
-
         
         loss.backward()
         optimizer.step()
