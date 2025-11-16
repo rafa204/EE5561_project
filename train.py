@@ -120,7 +120,7 @@ for epoch in range(params.num_epochs):
         }
         torch.save(checkpoint, results_path / "checkpoint.pth.tar")
         
-        plot_examples(model, val_dataset, [0], results_path, params.net)
+        plot_examples(model, val_dataset, [0,1,2], results_path, params.net)
 
   
     scheduler.step() #Adjust learning rate
