@@ -165,8 +165,8 @@ Note: Values can be based on previous results
 (36) DS with Filter x4
 (37) Bicubic x2
 (38) Bicubic x4
-(39) DS x2
-(40) DS x4
+(39) DS x2 | Dice = 0.777
+(40) DS x4 | Dice = 0.739
 
 7. VAE 2D - Bilinear x2, 5 Slices, None Fusion - LR Exploration
 (41) VAE_2D, LR: 1e-4, with VAE *
